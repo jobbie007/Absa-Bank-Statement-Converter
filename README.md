@@ -6,6 +6,9 @@ A web application designed to parse, categorize, and visualize financial transac
 **Please Note:** This tool is currently optimized for **Absa Cheque Account** statements. Results may be inaccurate for other banks or account types.
 
 ---
+## Screen shot
+![Screenshot 2025-06-19 001219](https://github.com/user-attachments/assets/8bf75edb-850e-443b-a482-e92405d5aafd)
+
 
 ## Live Demo
 
