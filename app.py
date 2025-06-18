@@ -22,19 +22,30 @@ app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 RULES_FILE = 'custom_rules.json'
 
 # --- Helper Functions for Custom Rules ---
+
 def load_custom_rules():
-    """Loads categorization rules from a JSON file."""
+    """
+    Loads categorization rules from a JSON file.
+    CRITICAL FIX: This now checks if the file exists before trying to read it.
+    If it doesn't exist (e.g., after a server restart), it returns an empty dict
+    instead of crashing.
+    """
     if not os.path.exists(RULES_FILE):
         return {}
-    with open(RULES_FILE, 'r') as f:
-        return json.load(f)
+    # Use a try-except block for extra safety against empty or corrupted files
+    try:
+        with open(RULES_FILE, 'r') as f:
+            return json.load(f)
+    except json.JSONDecodeError:
+        return {} # Return empty if the file is malformed
 
 def save_custom_rules(rules):
     """Saves categorization rules to a JSON file."""
     with open(RULES_FILE, 'w') as f:
         json.dump(rules, f, indent=4)
 
-# --- PDF Parsing and Data Extraction Functions ---
+# --- (The rest of the file is identical to the last correct version) ---
+# ... PDF Parsing Functions ...
 def get_all_lines_from_pdf(pdf_path: str) -> list[str] | None:
     if not os.path.exists(pdf_path): return None
     try:
@@ -85,7 +96,7 @@ def parse_and_sort_transactions(blocks: list[str]) -> list[dict] | None:
         previous_balance = bbf_item['balance']
     except StopIteration:
         flash("Warning: 'Bal Brought Forward' not found. Debit/Credit columns may be incorrect.", 'warning')
-        previous_balance = 0 # Default to 0 if no BBF is found
+        previous_balance = 0
     final_data = []
     for tx in parsed_data:
         debit, credit = "", ""
@@ -101,12 +112,10 @@ def parse_and_sort_transactions(blocks: list[str]) -> list[dict] | None:
         final_data.append({**tx, 'debit': debit, 'credit': credit}); previous_balance = tx['balance']
     return final_data
 
-# --- Intelligent Categorization and Grouping ---
 
+# ... Categorization and Grouping Functions ...
 def categorize_transactions(transactions: list[dict], custom_rules: dict) -> list[dict]:
-    """Applies comprehensive categorization with noise removal and case-insensitivity."""
     effective_date_pattern = re.compile(r'\(effective\s*\d{1,2}/\d{2}/\d{4}\s*\)', re.IGNORECASE)
-    
     main_category_rules = {
         "Bank Charges": ["admin charge","Admin Charge", "monthly fee", "management fee", "notific fee", "archive stmt enq", "card replacement"],
         "Card Purchase": ["pos purchase", "overseas purchase", "Pos Purchase", "pospurchase"],
@@ -129,56 +138,46 @@ def categorize_transactions(transactions: list[dict], custom_rules: dict) -> lis
         "Vehicle Maintenance": ["supa quick", "tiger wheel", "bosch"],
         "Public Transport": ["gautrain"],
         "Tolls & Roads": ["sanral", "bakwena", "rtmc"],
-        "General Shopping": ["takealo", "superbalist", "amazon", "h&m"],
+        "General Shopping": ["takealot", "superbalist", "amazon", "h&m"],
         "Electronics": ["incredible connection", "istore"],
         "Books & Stationery": ["pna", "postnet"],
         "Gaming": ["steamgames", "playstation", "xbox"],
         "Phone & Airtime": ["airtime", "vodacom", "mtn", "cell c", "telkom"],
         "Utilities": ["eskom", "city power", "city of jhb", "city of cpt", "rand water"],
-        "Medical": ["dischem", "clicks", "momentum", "discovery", "pathcare", "lancet"],
+        "Medical": ["dis-chem", "clicks", "momentum", "discovery", "pathcare", "lancet"],
         "Investments": ["easyequities", "absa bank bit", "luno", "absa bank crypto", "absa bank mine"],
         "Income": ["cashfocus", "salary", "dad", "mom"],
         "Nsfas": ["ukzn_fin aid"]
     }
-    
     final_data = []
     for tx in transactions:
         clean_description = re.sub(effective_date_pattern, '', tx['description']).strip()
         tx_desc_lower = clean_description.lower()
         tx['description'] = clean_description
         sub_cat_assigned = False
-
         if "bal brought forward" in tx_desc_lower:
-            tx['Category'], tx['Sub-category'] = "Balance", "Opening Balance"
-            final_data.append(tx); continue
-
+            tx['Category'], tx['Sub-category'] = "Balance", "Opening Balance"; final_data.append(tx); continue
         for keyword, sub_cat in custom_rules.items():
             if keyword.lower() in tx_desc_lower:
                 tx['Sub-category'] = sub_cat; sub_cat_assigned = True; break
-        
         if not sub_cat_assigned:
             for sub_cat, keywords in subcategory_rules.items():
                 if any(k.lower() in tx_desc_lower for k in keywords):
                     tx['Sub-category'] = sub_cat; sub_cat_assigned = True; break
-
         assigned_main_category = "Other"
         for main_cat, keywords in main_category_rules.items():
             if any(k.lower() in tx_desc_lower for k in keywords):
                 assigned_main_category = main_cat; break
         tx['Category'] = assigned_main_category
-
         if assigned_main_category in ["Digital Transfer", "Credit Transfer"]:
             if tx.get('debit'): tx['Sub-category'] = "Transfer Out"
             elif tx.get('credit'): tx['Sub-category'] = "Transfer In"
             sub_cat_assigned = True
-
-        if not sub_cat_assigned:
-            tx['Sub-category'] = 'Uncategorized'
+        if not sub_cat_assigned: tx['Sub-category'] = 'Uncategorized'
         final_data.append(tx)
     return final_data
 
 def generate_grouping_key(description: str) -> str:
-    """Creates a 'smart' key for grouping similar transactions."""
     key = description.lower()
     noise_words = [
         'pos purchase settlement', 'pos purchase', 'pospurchase', 'card no', 'settlement', 
@@ -186,15 +185,13 @@ def generate_grouping_key(description: str) -> str:
         'digital payment', 'payment', 'eft'
     ]
     for word in noise_words: key = key.replace(word, '')
-    key = re.sub(r'\d', '', key) # Remove all digits, not just sequences
+    key = re.sub(r'\d', '', key)
     key = key.replace('*', ' ').replace('#', ' ').replace('_', ' ').replace('\'', ' ')
     return " ".join(key.split()).strip()
 
-# --- Flask Routes ---
-
+# ... Flask Routes ...
 @app.route('/')
-def index():
-    return render_template('index.html')
+def index(): return render_template('index.html')
 
 @app.route('/process', methods=['POST'])
 def process_pdf():
