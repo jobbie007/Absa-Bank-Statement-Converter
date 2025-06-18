@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bank Statement Processor</title>
+    <style>
+        /* --- General Body and Container Styles --- */
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background-color: #f4f7f6; margin: 0; padding: 40px; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+        .container { background: white; padding: 40px; border-radius: 12px; box-shadow: 0 8px 16px rgba(0,0,0,0.1); text-align: center; max-width: 500px; width: 100%; position: relative; z-index: 10; }
+        h1 { color: #333; margin-bottom: 20px; }
+        p { color: #666; margin-bottom: 30px; }
+
+        /* --- Drag and Drop Zone --- */
+        #drop-zone { border: 3px dashed #ccc; border-radius: 12px; padding: 50px; cursor: pointer; transition: all 0.3s ease-out; color: #666; }
+        #drop-zone.drag-over { border-color: #007bff; background-color: #f0f8ff; color: #007bff; }
+        #drop-zone p { margin: 0; font-size: 1.2em; }
+        #drop-zone .icon { font-size: 3em; margin-bottom: 10px; }
+        input[type="file"] { display: none; }
+        #file-name { margin-top: 15px; color: #333; font-style: italic; font-weight: bold; }
+        
+        /* --- Buttons and Links --- */
+        .submit-btn { background-color: #28a745; color: white; border: none; padding: 15px; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; transition: background-color 0.2s; margin-top: 20px; width: 100%; }
+        .submit-btn:hover { background-color: #218838; }
+        .submit-btn:disabled { background-color: #ccc; cursor: not-allowed; }
+        .start-over-link { margin-top: 25px; font-size: 0.9em; }
+        .start-over-link a { color: #6c757d; text-decoration: none; }
+        .start-over-link a:hover { text-decoration: underline; }
+
+        /* --- Flash Messages --- */
+        .messages { list-style: none; padding: 0; margin-top: 20px; text-align: left; }
+        .messages li { padding: 10px; border-radius: 5px; margin-bottom: 10px; }
+        .messages .error { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .messages .warning { background-color: #fff3cd; color: #856404; border: 1px solid #ffeeba; }
+        .messages .success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+
+        /* --- Loading Spinner Styles (CRITICAL PART) --- */
+        .loader-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(255, 255, 255, 0.85);
+            display: none; /* This is KEY. It must be hidden by default. */
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+        }
+        .loader {
+            border: 8px solid #f3f3f3; /* Light grey */
+            border-top: 8px solid #3498db; /* Blue */
+            border-radius: 50%;
+            width: 60px;
+            height: 60px;
+            animation: spin 1.5s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Bank Statement Converter</h1>
+        <p>Drag & drop one or more PDF statements below, or click to select files.</p>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <ul class="messages">
+                {% for category, message in messages %}
+                    <li class="{{ category }}">{{ message }}</li>
+                {% endfor %}
+                </ul>
+            {% endif %}
+        {% endwith %}
+
+        <form id="upload-form" action="{{ url_for('process_pdf') }}" method="post" enctype="multipart/form-data">
+            <div id="drop-zone">
+                <p class="icon">📄</p>
+                <p>Drop PDFs here or click to upload</p>
+                <p id="file-name"></p>
+            </div>
+            <input type="file" name="pdf_file" id="pdf_file" accept=".pdf" required multiple>
+            <button type="submit" id="submit-button" class="submit-btn" disabled>Process Files</button>
+        </form>
+
+        <div class="start-over-link">
+            <p><a href="{{ url_for('clear_session') }}">Having trouble? Click here to start over.</a></p>
+        </div>
+    </div>
+
+    <!-- The loader overlay is placed here, at the end of the body, outside the main container -->
+    <div class="loader-overlay" id="loader">
+        <div class="loader"></div>
+    </div>
+
+<script>
+    const dropZone = document.getElementById('drop-zone');
+    const fileInput = document.getElementById('pdf_file');
+    const fileNameDisplay = document.getElementById('file-name');
+    const submitButton = document.getElementById('submit-button');
+    const uploadForm = document.getElementById('upload-form');
+    const loader = document.getElementById('loader');
+
+    dropZone.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', () => handleFiles(fileInput.files));
+    dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+    dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('drag-over');
+        fileInput.files = e.dataTransfer.files;
+        handleFiles(fileInput.files);
+    });
+
+    function handleFiles(files) {
+        const pdfFiles = Array.from(files).filter(file => file.type === "application/pdf");
+        if (pdfFiles.length > 0) {
+            fileNameDisplay.textContent = pdfFiles.length === 1 ? `Selected: ${pdfFiles[0].name}` : `Selected: ${pdfFiles.length} files`;
+            submitButton.disabled = false;
+        } else {
+            fileNameDisplay.textContent = "Please select at least one PDF file.";
+            submitButton.disabled = true;
+        }
+    }
+
+    // This event listener shows the loader only when the form is submitted
+    uploadForm.addEventListener('submit', () => {
+        if (!submitButton.disabled) {
+            loader.style.display = 'flex';
+        }
+    });
+</script>
+</body>
+</html>

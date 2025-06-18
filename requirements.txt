@@ -1,0 +1,6 @@
+Flask
+pandas
+PyMuPDF
+openpyxl
+Flask-Session
+gunicorn

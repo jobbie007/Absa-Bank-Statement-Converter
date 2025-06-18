@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Review Uncategorized Transactions</title>
+    <style>
+        /* Styles remain the same as the previous version */
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background-color: #f4f7f6; margin: 0; padding: 40px; }
+        .container { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 8px 16px rgba(0,0,0,0.1); max-width: 1000px; margin: auto; }
+        h1 { color: #333; text-align: center; }
+        p { color: #666; text-align: center; margin-bottom: 30px;}
+        .review-item { border: 1px solid #ddd; padding: 15px; margin-bottom: 15px; border-radius: 8px; display: grid; grid-template-columns: 1fr 100px 200px 200px; gap: 20px; align-items: center; }
+        .review-item .desc { font-weight: bold; }
+        .review-item .count { font-style: italic; color: #555; text-align: center; }
+        .form-group { display: flex; flex-direction: column; }
+        label { font-size: 0.8em; color: #555; margin-bottom: 5px; }
+        select, input[type="text"] { padding: 8px; border-radius: 4px; border: 1px solid #ccc; width: 100%; box-sizing: border-box; }
+        .submit-btn { background-color: #28a745; color: white; border: none; padding: 15px; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; margin-top: 20px; width: 100%; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Review Uncategorized Items</h1>
+        <p>Intelligently grouped by merchant. Categorize each group once to apply to all related transactions.</p>
+        
+        <form action="{{ url_for('update_rules') }}" method="post">
+            <!-- Loop through the intelligently grouped items -->
+            {% for group_key, data in grouped_items.items() %}
+            <div class="review-item">
+                <!-- Display the full description of a sample transaction for context -->
+                <div class="desc">{{ data.sample_tx.description }}</div>
+                <div class="count">({{ data.count }} transactions)</div>
+                <div class="form-group">
+                    <label for="cat_{{ loop.index0 }}">Choose Existing</label>
+                    <select name="cat_{{ loop.index0 }}" id="cat_{{ loop.index0 }}">
+                        <option value="skip">-- Skip --</option>
+                        {% for cat in all_subcategories %}
+                        <option value="{{ cat }}">{{ cat }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="new_cat_{{ loop.index0 }}">Or Create New</label>
+                    <input type="text" name="new_cat_{{ loop.index0 }}" id="new_cat_{{ loop.index0 }}" placeholder="e.g., University Cafe">
+                </div>
+                
+                <!-- CRITICAL: This hidden input now sends the clean group_key back -->
+                <input type="hidden" name="group_key" value="{{ group_key }}">
+            </div>
+            {% endfor %}
+            <button type="submit" class="submit-btn">Save Categories & Continue</button>
+        </form>
+    </div>
+</body>
+</html>

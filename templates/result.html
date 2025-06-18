@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Processing Results</title>
+    <!-- Include Chart.js from a CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        /* --- General Body and Container Styles --- */
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background-color: #f4f7f6; margin: 0; padding: 40px; }
+        .container { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 8px 16px rgba(0,0,0,0.1); max-width: 1200px; margin: auto; }
+        h1 { color: #333; text-align: center; }
+
+        /* --- Action Buttons --- */
+        .actions { display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; flex-wrap: wrap; gap: 10px; }
+        .btn { text-decoration: none; color: white; padding: 12px 25px; border-radius: 8px; font-weight: bold; transition: background-color 0.2s; text-align: center; cursor: pointer; border: none; font-size: 1em; }
+        .btn-download { background-color: #007bff; }
+        .btn-download:hover { background-color: #0056b3; }
+        .btn-new { background-color: #6c757d; }
+        .btn-new:hover { background-color: #5a6268; }
+        .btn-chart { background-color: #17a2b8; } /* A new color for the chart button */
+        .btn-chart:hover { background-color: #138496; }
+
+        /* --- Table Styles --- */
+        .table-container { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 0.95em; }
+        th, td { padding: 12px 15px; border: 1px solid #ddd; text-align: left; white-space: nowrap; }
+        th { background-color: #007bff; color: white; cursor: pointer; position: sticky; top: 0; }
+        th:hover { background-color: #0056b3; }
+        td:nth-child(3) { white-space: normal; min-width: 300px; }
+        tr:nth-child(even) { background-color: #f2f2f2; }
+        tr:hover { background-color: #e9ecef; }
+        tfoot tr { background-color: #e9ecef; font-weight: bold; }
+        tfoot td { text-align: right; }
+
+        /* --- NEW: Modal Styles --- */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.6);
+            display: none; /* Hidden by default */
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        .modal-content {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            width: 90%;
+            max-width: 700px;
+            position: relative;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+        }
+        .modal-close {
+            position: absolute;
+            top: 15px;
+            right: 20px;
+            font-size: 2em;
+            font-weight: bold;
+            color: #aaa;
+            cursor: pointer;
+            line-height: 1;
+        }
+        .modal-close:hover { color: #333; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Transaction Report</h1>
+        
+        <div class="actions">
+            <div>
+                <a href="{{ url_for('clear_session') }}" class="btn btn-new">Start Over</a>
+                <a href="{{ url_for('download_file') }}" class="btn btn-download">Download as Excel</a>
+            </div>
+            <!-- This is the new button to open the modal -->
+            <button id="viewChartBtn" class="btn btn-chart">View Expense Chart</button>
+        </div>
+
+        <div class="table-container">
+            <table>
+                <!-- The entire table structure (thead, tbody, tfoot) remains exactly the same -->
+                <thead>
+                    <tr>
+                        {% for header in headers %}
+                            <th>{{ header }}</th>
+                        {% endfor %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for tx in transactions %}
+                    <tr>
+                        <td>{{ tx.date }}</td>
+                        <td>{{ tx.get('Category', '') }}</td>
+                        <td>{{ tx.description }}</td>
+                        <td>{{ tx.debit }}</td>
+                        <td>{{ tx.credit }}</td>
+                        <td>{{ tx.get('Sub-category', '') }}</td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="{{ headers|length }}">No transactions found.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+                <tfoot>
+                    <tr>
+                        <td colspan="3" style="text-align: right; font-weight: bold;">TOTALS:</td>
+                        <td style="text-align: left;">{{ "%.2f"|format(total_debit) }}</td>
+                        <td style="text-align: left;">{{ "%.2f"|format(total_credit) }}</td>
+                        <td></td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+    </div>
+
+    <!-- NEW: Modal HTML Structure (placed at the end of the body) -->
+    <div id="chartModal" class="modal-overlay">
+        <div class="modal-content">
+            <span id="closeModalBtn" class="modal-close">×</span>
+            <h2>Expense Breakdown</h2>
+            <canvas id="expenseChart"></canvas>
+        </div>
+    </div>
+    
+    <!-- Scripts (Tablesort and Chart.js) -->
+    <script src="{{ url_for('static', filename='tablesort.min.js') }}"></script>
+    <script>
+        // --- Table Sorting ---
+        if (document.querySelector('table tbody tr')) {
+            new Tablesort(document.querySelector('table'));
+        }
+
+        // --- NEW: Modal and Chart Logic ---
+        const viewChartBtn = document.getElementById('viewChartBtn');
+        const chartModal = document.getElementById('chartModal');
+        const closeModalBtn = document.getElementById('closeModalBtn');
+        let expenseChart = null; // Variable to hold the chart instance
+
+        // Function to open the modal
+        function openModal() {
+            chartModal.style.display = 'flex';
+            // Create the chart only when the modal is opened for the first time
+            if (!expenseChart) {
+                renderChart();
+            }
+        }
+
+        // Function to close the modal
+        function closeModal() {
+            chartModal.style.display = 'none';
+        }
+        
+        // Event listeners for opening and closing the modal
+        viewChartBtn.addEventListener('click', openModal);
+        closeModalBtn.addEventListener('click', closeModal);
+        
+        // Also close the modal if the user clicks on the dark overlay
+        window.addEventListener('click', (event) => {
+            if (event.target === chartModal) {
+                closeModal();
+            }
+        });
+
+        // Function to render the chart
+        function renderChart() {
+            const ctx = document.getElementById('expenseChart').getContext('2d');
+            const chartLabels = {{ chart_labels|tojson }};
+            const chartValues = {{ chart_values|tojson }};
+
+            // Prevent chart rendering if there is no data
+            if (chartLabels.length === 0) {
+                ctx.font = '16px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('No expense data available to display.', ctx.canvas.width / 2, 50);
+                return;
+            }
+
+            expenseChart = new Chart(ctx, {
+                type: 'pie',
+                data: {
+                    labels: chartLabels,
+                    datasets: [{
+                        label: 'Expenses by Category',
+                        data: chartValues,
+                        backgroundColor: [
+                            '#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40',
+                            '#C9CBCF', '#E7E9ED', '#8DDF39', '#F981F4', '#FF5733', '#C70039'
+                        ],
+                        hoverOffset: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: { position: 'top' },
+                        title: { display: false }
+                    }
+                }
+            });
+        }
+    </script>
+</body>
+</html>
